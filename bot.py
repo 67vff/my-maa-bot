@@ -30,37 +30,24 @@ async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     try:
-        # Формируем URL правильно (без лишних слэшей)
         url = f"{API_BASE}/command"
-        
         headers = {
             "Authorization": f"Bearer {MILLIDA_API_KEY}",
             "Content-Type": "application/json"
         }
-        
-        # Отправляем команду
         data = {"command": f"botconfirm {code}"}
+        
         response = requests.post(url, headers=headers, json=data, timeout=15)
         
-        # Логируем ответ для отладки
-        logger.info(f"API ответ: {response.status_code} - {response.text}")
+        # Отправляем ответ сервера прямо в Telegram, чтобы увидеть, что не так
+        await update.message.reply_text(
+            f"Ответ сервера:\n"
+            f"Код: {response.status_code}\n"
+            f"Текст: {response.text[:200]}"
+        )
         
-        if response.status_code == 200:
-            await update.message.reply_text(
-                f"Код {code} подтвержден! Теперь зайди в игру и введи:\n"
-                f"`/botaccept {code}`",
-                parse_mode='Markdown'
-            )
-        elif response.status_code == 401:
-            await update.message.reply_text(
-                "Ошибка 401: Ключ не принят. Проверь, что ключ скопирован без пробелов и у него есть право «Консоль и команды»."
-            )
-        else:
-            await update.message.reply_text(f"Ошибка API: {response.status_code}. Ответ: {response.text[:100]}")
-            
     except Exception as e:
-        logger.error(f"Ошибка запроса: {e}")
-        await update.message.reply_text(f"Ошибка подключения: {e}")
+        await update.message.reply_text(f"Ошибка: {e}")
 
 def main():
     if not TELEGRAM_TOKEN or not MILLIDA_API_KEY:
