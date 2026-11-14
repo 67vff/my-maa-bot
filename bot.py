@@ -31,26 +31,52 @@ async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         url = f"{API_BASE}/command"
-        
         headers = {
             "Authorization": f"Bearer {MILLIDA_API_KEY}",
             "Content-Type": "application/json"
         }
-        
         data = {"command": f"botconfirm {code}"}
         
-        # Отключаем проверку SSL и редиректы, чтобы избежать проблем с ключом
-        response = requests.post(url, headers=headers, json=data, timeout=15, verify=False, allow_redirects=False)
+        response = requests.post(url, headers=headers, json=data, timeout=15)
         
-        # Отправляем полный ответ в Telegram для отладки
-        await update.message.reply_text(
-            f"Статус: {response.status_code}\n"
-            f"Заголовки: {dict(response.headers)}\n"
-            f"Текст: {response.text[:500]}"
-        )
-        
+        if response.status_code == 200:
+            await update.message.reply_text(
+                f"Код {code} подтвержден! Теперь зайди в игру и введи:\n"
+                f"`/botaccept {code}`",
+                parse_mode='Markdown'
+            )
+        else:
+            await update.message.reply_text(
+                f"Ошибка Millida: {response.status_code}\n"
+                f"Ответ: {response.text[:300]}"
+            )
+            
     except Exception as e:
         logger.error(f"Ошибка запроса: {e}")
+        await update.message.reply_text(f"Ошибка: {e}")
+
+async def disable_protection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Этот ключ должен иметь право "protection"!
+    if not MILLIDA_API_KEY:
+        await update.message.reply_text("Ошибка: API ключ не настроен.")
+        return
+
+    try:
+        url = f"{API_BASE}/antibot"
+        headers = {
+            "Authorization": f"Bearer {MILLIDA_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        data = {"preset": "off"}
+        
+        response = requests.put(url, headers=headers, json=data, timeout=15)
+        
+        await update.message.reply_text(
+            f"Отключение защиты:\n"
+            f"Статус: {response.status_code}\n"
+            f"Ответ: {response.text[:300]}"
+        )
+    except Exception as e:
         await update.message.reply_text(f"Ошибка: {e}")
 
 def main():
@@ -61,6 +87,7 @@ def main():
     app = Application.builder().token(TELEGRAM_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("confirm", confirm))
+    app.add_handler(CommandHandler("disableprotection", disable_protection))
     print("Бот запущен!")
     app.run_polling()
 
