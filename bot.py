@@ -10,7 +10,6 @@ MILLIDA_API_KEY = os.environ.get("MILLIDA_API_KEY")
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Базовый URL строго по документации (без слэша на конце)
 API_BASE = "https://millida.net/v2/hosting/api"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -31,7 +30,6 @@ async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     try:
-        # Формируем URL правильно: API_BASE + "/command"
         url = f"{API_BASE}/command"
         
         headers = {
@@ -41,28 +39,19 @@ async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         data = {"command": f"botconfirm {code}"}
         
-        logger.info(f"Отправка запроса на {url} с ключом: {MILLIDA_API_KEY[:15]}...")
+        # Отключаем проверку SSL и редиректы, чтобы избежать проблем с ключом
+        response = requests.post(url, headers=headers, json=data, timeout=15, verify=False, allow_redirects=False)
         
-        response = requests.post(url, headers=headers, json=data, timeout=15)
+        # Отправляем полный ответ в Telegram для отладки
+        await update.message.reply_text(
+            f"Статус: {response.status_code}\n"
+            f"Заголовки: {dict(response.headers)}\n"
+            f"Текст: {response.text[:500]}"
+        )
         
-        logger.info(f"Ответ: {response.status_code} - {response.text[:300]}")
-        
-        if response.status_code == 200:
-            await update.message.reply_text(
-                f"Код {code} подтвержден! Теперь зайди в игру и введи:\n"
-                f"`/botaccept {code}`",
-                parse_mode='Markdown'
-            )
-        else:
-            # Показываем ответ сервера в Telegram для отладки
-            await update.message.reply_text(
-                f"Ошибка Millida: {response.status_code}\n"
-                f"Ответ: {response.text[:200]}"
-            )
-            
     except Exception as e:
         logger.error(f"Ошибка запроса: {e}")
-        await update.message.reply_text(f"Ошибка подключения: {e}")
+        await update.message.reply_text(f"Ошибка: {e}")
 
 def main():
     if not TELEGRAM_TOKEN or not MILLIDA_API_KEY:
