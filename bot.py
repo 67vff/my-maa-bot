@@ -1,124 +1,97 @@
 import logging
 import os
 import requests
-from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+from flask import Flask, request, jsonify
+import threading
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, ContextTypes, CallbackQueryHandler
 
 TELEGRAM_TOKEN = os.environ.get("BOT_TOKEN")
 MILLIDA_API_KEY = os.environ.get("MILLIDA_API_KEY")
 
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Исправленный адрес API от поддержки Millida
 API_BASE = "https://api.millida.net/v2/hosting/api"
+app = Flask(__name__)
+bot_app = None
 
+# --- HTTP СЕРВЕР ДЛЯ ПЛАГИНА ---
+@app.route('/send_2fa', methods=['POST'])
+def send_2fa():
+    data = request.json
+    chat_id = data.get('chat_id')
+    player = data.get('player')
+    code = data.get('code')
+    ip = data.get('ip')
+
+    if not chat_id:
+        return jsonify({"ok": False, "error": "No chat_id"}), 400
+
+    # Получаем город по IP (через ip-api.com)
+    city = "Unknown"
+    try:
+        res = requests.get(f"http://ip-api.com/json/{ip}?fields=city,country", timeout=3)
+        if res.status_code == 200:
+            info = res.json()
+            city = f"{info.get('city', '?')}, {info.get('country', '?')}"
+    except:
+        pass
+
+    text = f"🔐 Запрос на вход\nИгрок: {player}\nIP: {ip}\nГород: {city}\nКод: {code}"
+    keyboard = [
+        [InlineKeyboardButton("✅ Подтвердить", callback_data=f"confirm:{player}:{code}")],
+        [InlineKeyboardButton("❌ Отклонить", callback_data=f"deny:{player}:{code}")]
+    ]
+    
+    # Отправляем сообщение в Telegram
+    bot_app.bot.send_message(chat_id=chat_id, text=text, reply_markup=InlineKeyboardMarkup(keyboard))
+    return jsonify({"ok": True})
+
+# --- TELEGRAM БОТ ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "Привет! Введи код, который получил в игре командой /registerbot.\n"
-        "Отправь его так: /confirm ТВОЙ_КОД\n\n"
-        "Также доступна команда /disableprotection для отключения антибота."
-    )
+    await update.message.reply_text("Привет! Я бот для 2FA. Введи /link <ник> чтобы привязать аккаунт.")
 
-async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def link_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        await update.message.reply_text("Укажи код: /confirm ТВОЙ_КОД")
+        await update.message.reply_text("Использование: /link <ник>")
         return
+    nick = context.args[0]
+    chat_id = update.effective_chat.id
     
-    code = context.args[0]
-    
-    if not MILLIDA_API_KEY:
-        await update.message.reply_text("Ошибка: API ключ Millida не настроен в переменных окружения.")
-        return
-
+    # Отправляем запрос на сервер плагина для привязки
     try:
-        url = f"{API_BASE}/command"
-        headers = {
-            "Authorization": f"Bearer {MILLIDA_API_KEY}",
-            "Content-Type": "application/json",
-            "Accept": "application/json"
-        }
-        data = {"command": f"botconfirm {code}"}
-        
-        logger.info(f"Отправка запроса на {url} с командой botconfirm {code}")
-        response = requests.post(url, headers=headers, json=data, timeout=15)
-        
-        # ИСПРАВЛЕНО: принимаем и 200, и 201 (успешное создание)
-        if response.status_code in [200, 201]:
-            await update.message.reply_text(
-                f"✅ Код `{code}` подтвержден!\n\n"
-                f"Теперь зайди в игру и введи:\n"
-                f"`/botaccept {code}`",
-                parse_mode='Markdown'
-            )
-        elif response.status_code == 401:
-            await update.message.reply_text(
-                "❌ Ошибка 401 (Unauthorized).\n"
-                "Возможные причины:\n"
-                "1. Неверный API-ключ (проверь MILLIDA_API_KEY).\n"
-                "2. У ключа нет права 'Защита' (protection).\n"
-                "3. Ключ создан в старом разделе (пересоздай в 'Игроки и доступ' -> 'API-ключи')."
-            )
-        else:
-            await update.message.reply_text(
-                f"❌ Ошибка Millida: {response.status_code}\n"
-                f"Ответ: {response.text[:300]}"
-            )
-            
-    except requests.exceptions.Timeout:
-        await update.message.reply_text("❌ Превышено время ожидания ответа от Millida.")
+        # Плагин должен иметь эндпоинт /link, который обновляет БД
+        # Для простоты, плагин может сам присылать запрос боту, но здесь мы просто говорим что нужно сделать
+        await update.message.reply_text(f"Аккаунт {nick} привязан к TG! (В реальности нужно дернуть API плагина)")
     except Exception as e:
-        logger.error(f"Ошибка запроса: {e}")
-        await update.message.reply_text(f"❌ Ошибка: {e}")
+        await update.message.reply_text(f"Ошибка: {e}")
 
-async def disable_protection(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not MILLIDA_API_KEY:
-        await update.message.reply_text("Ошибка: API ключ не настроен.")
-        return
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data.split(":")
+    action = data[0]
+    player = data[1]
+    code = data[2]
 
-    try:
-        url = f"{API_BASE}/antibot"
-        headers = {
-            "Authorization": f"Bearer {MILLIDA_API_KEY}",
-            "Content-Type": "application/json",
-            "Accept": "application/json"
-        }
-        data = {"preset": "off"}
-        
-        logger.info(f"Отправка запроса на {url} для отключения защиты")
-        response = requests.put(url, headers=headers, json=data, timeout=15)
-        
-        if response.status_code in [200, 201]:
-            await update.message.reply_text("✅ Защита (антибот) успешно отключена!")
-        elif response.status_code == 401:
-            await update.message.reply_text(
-                "❌ Ошибка 401 (Unauthorized).\n"
-                "Убедись, что у API-ключа есть право 'protection' (Защита)."
-            )
-        else:
-            await update.message.reply_text(
-                f"Статус: {response.status_code}\n"
-                f"Ответ: {response.text[:300]}"
-            )
-    except Exception as e:
-        logger.error(f"Ошибка запроса: {e}")
-        await update.message.reply_text(f"❌ Ошибка: {e}")
+    if action == "confirm":
+        await query.edit_message_text(text=f"✅ Вход для {player} подтвержден!")
+        # Здесь нужно дернуть API плагина, чтобы он пустил игрока
+        # POST http://127.0.0.1:8080/confirm_2fa (player, code)
+    else:
+        await query.edit_message_text(text=f"❌ Вход для {player} отклонен.")
 
-def main():
-    if not TELEGRAM_TOKEN or not MILLIDA_API_KEY:
-        logger.error("Не заданы BOT_TOKEN или MILLIDA_API_KEY в переменных окружения!")
-        return
-
-    app = Application.builder().token(TELEGRAM_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("confirm", confirm))
-    app.add_handler(CommandHandler("disableprotection", disable_protection))
-    
-    logger.info("Бот запущен и готов к работе!")
-    app.run_polling()
+def run_bot():
+    global bot_app
+    bot_app = Application.builder().token(TELEGRAM_TOKEN).build()
+    bot_app.add_handler(CommandHandler("start", start))
+    bot_app.add_handler(CommandHandler("link", link_account))
+    bot_app.add_handler(CallbackQueryHandler(button_handler))
+    bot_app.run_polling()
 
 if __name__ == '__main__':
-    main()
+    # Запускаем Flask в отдельном потоке
+    threading.Thread(target=lambda: app.run(host='127.0.0.1', port=8080, debug=False, use_reloader=False)).start()
+    # Запускаем бота
+    run_bot()
