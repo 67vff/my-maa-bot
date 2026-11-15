@@ -5,24 +5,39 @@ import random
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
-# Берем токены из переменных окружения BotHost
 TELEGRAM_TOKEN = os.environ.get("BOT_TOKEN")
-PLUGIN_API = os.environ.get("PLUGIN_API", "http://127.0.0.1:8081")
+MILLIDA_API_KEY = os.environ.get("MILLIDA_API_KEY")
+MILLIDA_API = "https://millida.net/v2/hosting/api"
 
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# --- КОМАНДЫ БОТА ---
+# Вспомогательная функция для отправки команд в консоль сервера
+def send_console_command(command: str):
+    try:
+        headers = {
+            "Authorization": f"Bearer {MILLIDA_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        data = {"command": command}
+        response = requests.post(f"{MILLIDA_API}/command", headers=headers, json=data, timeout=10)
+        
+        if response.status_code in [200, 201]:
+            return True
+        else:
+            logger.error(f"Millida API error: {response.status_code} - {response.text}")
+            return False
+    except Exception as e:
+        logger.error(f"Ошибка запроса к Millida API: {e}")
+        return False
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "👋 Привет! Я бот для управления аккаунтом.\n\n"
-        "🔗 /link <ник> — привязать аккаунт (выдаст код для ввода в игре)\n"
+        "🔗 /link <ник> — привязать аккаунт\n"
         "🔑 /changepass <ник> <старый> <новый> — сменить пароль\n"
-        "🚫 /block <ник> — заблокировать аккаунт\n"
-        "✅ /unblock <ник> — разблокировать аккаунт"
+        "🚫 /block <ник> — заблокировать\n"
+        "✅ /unblock <ник> — разблокировать"
     )
 
 async def link_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -30,45 +45,32 @@ async def link_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Использование: /link <ник>")
         return
     nick = context.args[0]
-    tg_id = update.effective_chat.id
+    # Генерируем код и отправляем его в консоль (плагин должен его поймать)
     code = str(random.randint(1000, 9999))
     
-    try:
-        # Отправляем запрос на плагин
-        response = requests.post(
-            f"{PLUGIN_API}/link", 
-            json={"player": nick, "tg_id": tg_id}, 
-            timeout=5
+    # Отправляем команду в консоль сервера, чтобы плагин сохранил код
+    success = send_console_command(f"makauth linkcode {nick} {code}")
+    
+    if success:
+        await update.message.reply_text(
+            f"🔗 Код: `{code}`\nВведи в игре: `/confirm {code}`",
+            parse_mode='Markdown'
         )
-        if response.status_code == 200:
-            await update.message.reply_text(
-                f"🔗 Код для привязки: `{code}`\n\n"
-                f"Зайди в игру и введи: `/confirm {code}`",
-                parse_mode='Markdown'
-            )
-        else:
-            await update.message.reply_text(f"❌ Ошибка сервера: {response.status_code}")
-    except Exception as e:
-        logger.error(f"Ошибка /link: {e}")
-        await update.message.reply_text("❌ Не удалось связаться с сервером. Проверьте подключение.")
+    else:
+        await update.message.reply_text("❌ Ошибка отправки команды на сервер.")
 
 async def changepass(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(context.args) != 3:
-        await update.message.reply_text("Использование: /changepass <ник> <старый_пароль> <новый_пароль>")
+        await update.message.reply_text("Использование: /changepass <ник> <старый> <новый>")
         return
     nick, old, new = context.args
-    try:
-        res = requests.post(
-            f"{PLUGIN_API}/changepass", 
-            json={"player": nick, "old": old, "new": new}, 
-            timeout=5
-        )
-        if res.status_code == 200:
-            await update.message.reply_text(f"✅ Пароль для {nick} изменен!")
-        else:
-            await update.message.reply_text("❌ Неверный старый пароль или игрок не найден.")
-    except Exception as e:
-        logger.error(f"Ошибка /changepass: {e}")
+    
+    # Отправляем команду в консоль
+    success = send_console_command(f"makauth changepass {nick} {old} {new}")
+    
+    if success:
+        await update.message.reply_text(f"✅ Команда на смену пароля для {nick} отправлена на сервер.")
+    else:
         await update.message.reply_text("❌ Ошибка связи с сервером.")
 
 async def block_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -76,11 +78,12 @@ async def block_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Использование: /block <ник>")
         return
     nick = context.args[0]
-    try:
-        requests.post(f"{PLUGIN_API}/block", json={"player": nick}, timeout=5)
-        await update.message.reply_text(f"🚫 Аккаунт {nick} заблокирован.")
-    except Exception as e:
-        logger.error(f"Ошибка /block: {e}")
+    
+    success = send_console_command(f"makauth block {nick}")
+    
+    if success:
+        await update.message.reply_text(f"🚫 Команда на блокировку {nick} отправлена.")
+    else:
         await update.message.reply_text("❌ Ошибка связи с сервером.")
 
 async def unblock_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -88,27 +91,21 @@ async def unblock_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Использование: /unblock <ник>")
         return
     nick = context.args[0]
-    try:
-        requests.post(f"{PLUGIN_API}/unblock", json={"player": nick}, timeout=5)
-        await update.message.reply_text(f"✅ Аккаунт {nick} разблокирован.")
-    except Exception as e:
-        logger.error(f"Ошибка /unblock: {e}")
+    
+    success = send_console_command(f"makauth unblock {nick}")
+    
+    if success:
+        await update.message.reply_text(f"✅ Команда на разблокировку {nick} отправлена.")
+    else:
         await update.message.reply_text("❌ Ошибка связи с сервером.")
 
 def main():
-    if not TELEGRAM_TOKEN:
-        logger.error("Не задан BOT_TOKEN!")
-        return
-
-    logger.info(f"Бот запущен! API плагина: {PLUGIN_API}")
-    
     app = Application.builder().token(TELEGRAM_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("link", link_account))
     app.add_handler(CommandHandler("changepass", changepass))
     app.add_handler(CommandHandler("block", block_account))
     app.add_handler(CommandHandler("unblock", unblock_account))
-    
     app.run_polling()
 
 if __name__ == '__main__':
