@@ -13,7 +13,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ИСПРАВЛЕННЫЙ АДРЕС API (подсказка от поддержки Millida)
+# Исправленный адрес API от поддержки Millida
 API_BASE = "https://api.millida.net/v2/hosting/api"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -46,7 +46,8 @@ async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.info(f"Отправка запроса на {url} с командой botconfirm {code}")
         response = requests.post(url, headers=headers, json=data, timeout=15)
         
-        if response.status_code == 200:
+        # ИСПРАВЛЕНО: принимаем и 200, и 201 (успешное создание)
+        if response.status_code in [200, 201]:
             await update.message.reply_text(
                 f"✅ Код `{code}` подтвержден!\n\n"
                 f"Теперь зайди в игру и введи:\n"
@@ -90,7 +91,7 @@ async def disable_protection(update: Update, context: ContextTypes.DEFAULT_TYPE)
         logger.info(f"Отправка запроса на {url} для отключения защиты")
         response = requests.put(url, headers=headers, json=data, timeout=15)
         
-        if response.status_code == 200:
+        if response.status_code in [200, 201]:
             await update.message.reply_text("✅ Защита (антибот) успешно отключена!")
         elif response.status_code == 401:
             await update.message.reply_text(
