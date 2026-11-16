@@ -14,8 +14,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# --- Новый URL API без защиты браузера от поддержки Millida ---
-API_URL = "https://api.millida.net/v2/hosting/api"
+# --- Полный URL для отправки команд в консоль Millida ---
+API_URL = "https://millida.net"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
