@@ -14,7 +14,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# --- Правильный URL API Millida (без защиты cookie-shield) ---
+# --- Правильный URL API Millida (не забудьте подставить ID сервера, если нужно) ---
 API_URL = "https://millida.net"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -39,9 +39,9 @@ async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         headers = {
             "Authorization": f"Bearer {MILLIDA_API_KEY}",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "Accept": "application/json"
         }
-        # Команда отправляется без слэша в начале
         data = {
             "command": f"makaauth botconfirm {code}"
         }
@@ -55,15 +55,19 @@ async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode='Markdown'
             )
         else:
+            # Берём первые 400 символов ответа сервера, чтобы сообщение влезло в Telegram
+            error_details = response.text[:400] if response.text else "Пустой ответ от сервера"
             logger.error(f"Ошибка API: {response.status_code} - {response.text}")
+            
             await update.message.reply_text(
-                f"Ошибка API Millida: {response.status_code}.\n"
-                f"Проверь, что у API-ключа в панели включено право «Консоль и команды»."
+                f"❌ Ошибка API Millida!\n"
+                f"Код статуса: {response.status_code}\n"
+                f"Ответ сервера:\n{error_details}"
             )
             
     except Exception as e:
         logger.error(f"Ошибка запроса: {e}")
-        await update.message.reply_text(f"Ошибка подключения к API: {e}")
+        await update.message.reply_text(f"❌ Ошибка подключения к API:\n{type(e).__name__}: {e}")
 
 def main():
     if not TELEGRAM_TOKEN or not MILLIDA_API_KEY:
