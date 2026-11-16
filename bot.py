@@ -14,8 +14,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# --- Правильный URL API Millida (не забудьте подставить ID сервера, если нужно) ---
-API_URL = "https://millida.net"
+# --- Новый URL API без защиты браузера от поддержки Millida ---
+API_URL = "https://api.millida.net/v2/hosting/api"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
@@ -50,12 +50,11 @@ async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if response.status_code in (200, 201, 204):
             await update.message.reply_text(
-                f"Код {code} подтвержден! Теперь зайди в игру и введи:\n"
+                f"✅ Код {code} подтвержден! Теперь зайди в игру и введи:\n"
                 f"`/botaccept {code}`",
                 parse_mode='Markdown'
             )
         else:
-            # Берём первые 400 символов ответа сервера, чтобы сообщение влезло в Telegram
             error_details = response.text[:400] if response.text else "Пустой ответ от сервера"
             logger.error(f"Ошибка API: {response.status_code} - {response.text}")
             
