@@ -14,7 +14,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# --- Полный URL для отправки команд в консоль Millida ---
+# --- URL API Millida ---
 API_URL = "https://millida.net"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -36,11 +36,16 @@ async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Ошибка: API ключ Millida не настроен на сервере.")
         return
 
+    # Очищаем ключ от случайных пробелов или переносов строк
+    clean_key = MILLIDA_API_KEY.strip()
+
     try:
         headers = {
-            "Authorization": f"Bearer {MILLIDA_API_KEY}",
+            "Authorization": f"Bearer {clean_key}",
+            "X-Api-Key": clean_key,
             "Content-Type": "application/json",
-            "Accept": "application/json"
+            "Accept": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
         }
         data = {
             "command": f"makaauth botconfirm {code}"
